@@ -75,6 +75,16 @@ public class DataStructure {
 		}
 	
 	}
+
+	public static class piLocLocation{
+		public String floor;
+		public LatLng ll;
+		public piLocLocation(String f, LatLng l){
+			floor = f;
+			ll =l;
+		}
+	}
+
 	
 	//Hash map of point to vector of fingerprint
 	public static class RadioMap

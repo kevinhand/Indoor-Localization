@@ -52,6 +52,7 @@ import org.nus.cirlab.mapactivity.DataStructure.StepInfo;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.Vector;
@@ -65,7 +66,7 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
     private final String mServerIP = "piloc.d1.comp.nus.edu.sg";//
     private String floorPlanID = "";
     private String floorLevel = "1";
-    private RadioMap mRadioMap = null;
+    private HashMap<String, HashMap<LatLng, HashMap<String, Integer>>> mRadioMap = null;
 
     // These are simply the string resource IDs for each of the style names. We use them
     // as identifiers when choosing which style to apply.
@@ -332,6 +333,34 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
             }
         });
 
+        mMap.setOnIndoorStateChangeListener(
+                new GoogleMap.OnIndoorStateChangeListener() {
+                    @Override
+                    public void onIndoorBuildingFocused() {
+
+                    }
+
+                    @Override
+                    public void onIndoorLevelActivated(IndoorBuilding indoorBuilding) {
+                        IndoorBuilding Building = mMap.getFocusedBuilding();
+                        if(Building!=null){
+                            List<IndoorLevel> levels = Building.getLevels();
+                            floorLevel = levels.get(Building.getActiveLevelIndex()).getShortName();
+                            if(!isShowRadioMap)
+                                Toast.makeText(getBaseContext(), "Please download data first", Toast.LENGTH_SHORT).show();
+                            else if(!mRadioMap.keySet().contains(floorLevel))
+                                Toast.makeText(getBaseContext(), "Current level is not support", Toast.LENGTH_SHORT).show();
+                            else {
+                                ShowRadioMap();
+                                Toast.makeText(getBaseContext(), ""+mRadioMap.get(floorLevel).size(), Toast.LENGTH_SHORT).show();
+                            }
+
+
+                        }
+
+                    }
+                });
+
         // Create and bind the PiLoc service, make some change here
 //        Intent intent = new Intent(MapsActivity.this, RadioMapCollectionService.class);
 //        this.getApplicationContext().bindService(intent, conn, Context.BIND_AUTO_CREATE);
@@ -424,7 +453,6 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
 //        }
     }
 
-
     /**
      * Checks if the map is ready (which depends on whether the Google Play services APK is
      * available. This should be called prior to calling any methods on GoogleMap.
@@ -454,7 +482,6 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
                     Manifest.permission.ACCESS_FINE_LOCATION, false);
         }
     }
-
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
@@ -492,7 +519,6 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
             mLocationPermissionDenied = false;
         }
     }
-
 
     String chosenFileName = "";
     private void showFileChooser() {
@@ -556,7 +582,6 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
         builder.show();
     }
 
-
     private void DownloadSelectedRadioMap(String locationString) {
 
         if(locationString.contains("Level")){
@@ -566,7 +591,7 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
 
             Log.d(TAG, floorPlanID+" "+floorLevel);
             if(floorPlanID.length()>0) {
-                File filename = new File(this.getExternalCacheDir()  + "/PiLoc/"+floorPlanID+"/"+floorLevel+"/radiomap.rm");
+                File filename = new File(this.getExternalCacheDir()  + "/PiLoc/"+floorPlanID+"/radiomap.rm");
                 if(filename.exists() && !isShowRadioMap)
                     new LoadRadioMapFromLocalTask().execute(null, null, null);
                 else
@@ -610,7 +635,6 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
                 e.printStackTrace();
             }
     }
-
 
     private void UploadSelectedRadioMap(String locationString) {
 
@@ -721,7 +745,7 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
 
             Log.d(TAG, floorPlanID+" "+floorLevel);
             if(floorPlanID.length()>0) {
-                File filename = new File(this.getExternalCacheDir()  + "/PiLoc/"+floorPlanID+"/"+floorLevel+"/radiomap.rm");
+                File filename = new File(this.getExternalCacheDir()  + "/PiLoc/"+floorPlanID+"/radiomap.rm");
                 if(filename.exists() && !isShowRadioMap)
                     new LoadRadioMapFromLocalTask().execute(null, null, null);
                 else
@@ -764,7 +788,6 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
             super.onActivityResult(requestCode, resultCode, data);
         }
     }
-
 
     private class UploadRadioMapTask extends AsyncTask<String, Void, String> {
         protected String doInBackground(String... f) {
@@ -850,7 +873,6 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
         }
     }
 
-
     private ArrayList<LatLng> NodeList = new ArrayList<>();
     private class LoadTraceFromLocalTask extends AsyncTask<String, Void, String> {
         protected String doInBackground(String... s) {
@@ -932,7 +954,7 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
     }
 
     private Boolean mIsLocating = false;
-    private LatLng mCurrentLocation ;
+    private DataStructure.piLocLocation mCurrentLocation ;
     private Marker locationMarker = null;
 
     public void startLocalization() {
@@ -959,8 +981,20 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
                                         if(locationMarker!=null){
                                             locationMarker.remove();
                                         }
+                                        IndoorBuilding building = mMap.getFocusedBuilding();
+                                        if (building != null) {
+                                            List<IndoorLevel> levels = building.getLevels();
+
+                                            for(IndoorLevel IL : levels){
+                                                if(IL.getShortName().equalsIgnoreCase(mCurrentLocation.floor)){
+                                                    IL.activate();
+                                                }
+                                            }
+                                        }
+
+
                                         locationMarker = mMap.addMarker(new MarkerOptions()
-                                                .position(mCurrentLocation)
+                                                .position(mCurrentLocation.ll)
                                                 .title("Your Indoor Location"));
                                     }
                                 });
@@ -976,8 +1010,6 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
         }).start();
     }
 
-
-
     public void ShowRadioMap() {
         Log.d(TAG, "show radio map on UI");
         while (mCircles.size()>0) {
@@ -989,14 +1021,14 @@ public class MapsActivity extends AppCompatActivity implements OnMarkerDragListe
             locationMarker.remove();
         }
 
+
         if (mRadioMap != null) {
-            Log.d(TAG, mRadioMap.mLocFingerPrints.size()+" ");
             // Set newly mapped points to green color on the bitmap
-            for (LatLng latLng : mRadioMap.mLocFingerPrints.keySet()) {
+            for (LatLng latLng : mRadioMap.get(floorLevel).keySet()) {
                 DraggablePoint tempDP = new DraggablePoint(latLng, pointSize, true, Color.GRAY);
                 mCircles.add(tempDP);
             }
-            mAccuracyText.setText("Error: "+mPilocService.getLocalizationError()+" m");
+            mAccuracyText.setText("Level "+floorLevel+" Error: "+mPilocService.getLocalizationError().get(floorLevel)+" m");
         }
     }
 

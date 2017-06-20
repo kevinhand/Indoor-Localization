@@ -20,6 +20,7 @@ import com.google.android.gms.maps.model.LatLng;
 import org.nus.cirlab.mapactivity.DataStructure.Fingerprint;
 import org.nus.cirlab.mapactivity.DataStructure.RadioMap;
 import org.nus.cirlab.mapactivity.DataStructure.StepInfo;
+import org.nus.cirlab.mapactivity.DataStructure.piLocLocation;
 
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
@@ -37,6 +38,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.Vector;
+
+import static java.lang.Double.parseDouble;
 
 
 public class RadioMapCollectionService extends Service implements SensorEventListener {
@@ -59,7 +62,7 @@ public class RadioMapCollectionService extends Service implements SensorEventLis
 	float mAzimuth = 0;
 	float l = 0.5f;
 
-	int port = 8080;
+	int port = 8081;
 	String colorCode = "black";
 	private WifiManager mWifiManager = null;
 	private BroadcastReceiver mWifiReceiver = null;
@@ -77,7 +80,7 @@ public class RadioMapCollectionService extends Service implements SensorEventLis
 	private boolean startCountingStep = false;
 	private boolean mIsWalking = false;
 	private boolean mIsStepUpdated = false;
-	private double mLocalizationError =-1;
+	private HashMap<String, Double> mLocalizationError = new HashMap<>();
 
 	// Phone orientation
 	private float[] mOrientVals = new float[3];
@@ -310,41 +313,45 @@ public class RadioMapCollectionService extends Service implements SensorEventLis
 		return currentFP;
 	}
 
-	public LatLng getLocation(Vector<Fingerprint> fp) {
-		if (mRadioMap == null || fp == null)
+	public piLocLocation getLocation(Vector<Fingerprint> fp) {
+		if (mRadioGuassianMap == null || fp == null)
 			return null;
 		return WeightedLocalization(fp, mRadioGuassianMap.keySet());
 	}
 
-	public LatLng WeightedLocalization(Vector<Fingerprint> fp, Set<LatLng> CandidateSet) {
+	public piLocLocation WeightedLocalization(Vector<Fingerprint> fp, Set<String> CandidateSet) {
 
 		LatLng Key = null;
 		double sum;
 		double maxScore = 0;
-
-		for (LatLng k : CandidateSet) {
-			int number = 0;
-			sum = 0;
-			for (Fingerprint f2 : fp) {
-				if (mRadioGuassianMap.get(k).containsKey(f2.mMac)) {
-					number++;
-					double diff = 1;
-					double impactFactor = 1.0 / mRadioGuassianMap.get(k).get(f2.mMac);
-					if (mRadioGuassianMap.get(k).get(f2.mMac) != f2.mRSSI) {
-						diff = Math.abs(mRadioGuassianMap.get(k).get(f2.mMac) - f2.mRSSI);
-						sum += impactFactor * (1.0 / diff);
-					} else {
-						sum += impactFactor * (1.0);
+		piLocLocation mpiLocLocation = null;
+		for(String floor:CandidateSet){
+			for (LatLng k : mRadioGuassianMap.get(floor).keySet()) {
+				int number = 0;
+				sum = 0;
+				for (Fingerprint f2 : fp) {
+					if (mRadioGuassianMap.get(floor).get(k).containsKey(f2.mMac)) {
+						number++;
+						double diff = 1;
+						double impactFactor = 1.0 / mRadioGuassianMap.get(floor).get(k).get(f2.mMac);
+						if (mRadioGuassianMap.get(floor).get(k).get(f2.mMac) != f2.mRSSI) {
+							diff = Math.abs(mRadioGuassianMap.get(floor).get(k).get(f2.mMac) - f2.mRSSI);
+							sum += impactFactor * (1.0 / diff);
+						} else {
+							sum += impactFactor * (1.0);
+						}
 					}
 				}
-			}
 
-			if (number > fp.size() / 2 && sum > maxScore) {
-				maxScore = sum;
-				Key = new LatLng(k.latitude, k.longitude);
+				if (number > fp.size() / 2 && sum > maxScore) {
+					maxScore = sum;
+					Key = new LatLng(k.latitude, k.longitude);
+					mpiLocLocation = new piLocLocation(floor, Key);
+				}
 			}
 		}
-		return Key;
+
+		return mpiLocLocation;
 	}
 
 	public RadioMap appendRadioMapFromMapping() {
@@ -417,34 +424,34 @@ public class RadioMapCollectionService extends Service implements SensorEventLis
 		mMappedSteps.clear();
 	}
 
-	public boolean saveRadiomap(String filePath) {
-		try {
-			if (mRadioMap == null)
-				return false;
-
-//			String path = Environment.getExternalStorageDirectory().getAbsolutePath();
-			File folder = new File(getExternalCacheDir()  + "/PiLoc/");
-			if (!folder.exists()) {
-				folder.mkdirs();
-			}
-
-			File f = new File(getExternalCacheDir()  + "/PiLoc/" + filePath);
-			FileOutputStream fos = new FileOutputStream(f);
-			for (LatLng p : mRadioMap.mLocFingerPrints.keySet()) {
-				String writeString = p.latitude + " " + p.longitude;
-				for (Fingerprint fp : mRadioMap.mLocFingerPrints.get(p)) {
-					writeString += " " + fp.mMac + " " + fp.mRSSI+ " "+ fp.mFrequency;
-				}
-				writeString += "\n";
-				fos.write(writeString.getBytes());
-			}
-			fos.close();
-		} catch (Exception e) {
-			e.printStackTrace();
-			return false;
-		}
-		return true;
-	}
+//	public boolean saveRadiomap(String filePath) {
+//		try {
+//			if (mRadioMap == null)
+//				return false;
+//
+////			String path = Environment.getExternalStorageDirectory().getAbsolutePath();
+//			File folder = new File(getExternalCacheDir()  + "/PiLoc/");
+//			if (!folder.exists()) {
+//				folder.mkdirs();
+//			}
+//
+//			File f = new File(getExternalCacheDir()  + "/PiLoc/" + filePath);
+//			FileOutputStream fos = new FileOutputStream(f);
+//			for (LatLng p : mRadioMap.mLocFingerPrints.keySet()) {
+//				String writeString = p.latitude + " " + p.longitude;
+//				for (Fingerprint fp : mRadioMap.mLocFingerPrints.get(p)) {
+//					writeString += " " + fp.mMac + " " + fp.mRSSI+ " "+ fp.mFrequency;
+//				}
+//				writeString += "\n";
+//				fos.write(writeString.getBytes());
+//			}
+//			fos.close();
+//		} catch (Exception e) {
+//			e.printStackTrace();
+//			return false;
+//		}
+//		return true;
+//	}
 
 	public boolean uploadRadioMap(String serverIP, String remoteID, String floorID) { //key function
 		try {
@@ -584,7 +591,7 @@ public class RadioMapCollectionService extends Service implements SensorEventLis
 
 	}
 
-	public RadioMap getRadioMap(String serverIP, String remoteID, String floorLevel) {
+	public HashMap<String, HashMap<LatLng, HashMap<String, Integer>>> getRadioMap(String serverIP, String remoteID, String floorLevel) {
 		try {
 			try {
 //				String path = Environment.getExternalStorageDirectory().getAbsolutePath();
@@ -592,7 +599,7 @@ public class RadioMapCollectionService extends Service implements SensorEventLis
 				if (!folder.exists()) {
 					folder.mkdirs();
 				}
-				File filename = new File(getExternalCacheDir()  + "/PiLoc/"+remoteID+"/"+floorLevel+"/radiomap.rm");
+				File filename = new File(getExternalCacheDir()  + "/PiLoc/"+remoteID+"/radiomap.rm");
 				FileOutputStream fos = new FileOutputStream(filename);
 
 				remoteID = remoteID.replace(" ", "-");
@@ -625,14 +632,14 @@ public class RadioMapCollectionService extends Service implements SensorEventLis
 		}
 		mMappedSteps.clear();
 
-		return mRadioMap;
+		return mRadioGuassianMap;
 	}
 
-	public RadioMap loadRadioMap( String remoteID, String floorLevel) {
+	public HashMap<String, HashMap<LatLng, HashMap<String, Integer>>> loadRadioMap( String remoteID, String floorLevel) {
 		try {
 			try {
 //				String path = Environment.getExternalStorageDirectory().getAbsolutePath();
-				File filename = new File(getExternalCacheDir()  + "/PiLoc/"+remoteID+"/"+floorLevel+"/radiomap.rm");
+				File filename = new File(getExternalCacheDir()  + "/PiLoc/"+remoteID+"/radiomap.rm");
 				BufferedReader in = new BufferedReader(new FileReader(filename));
 
 				String readLine = "";
@@ -655,7 +662,7 @@ public class RadioMapCollectionService extends Service implements SensorEventLis
 		}
 		mMappedSteps.clear();
 
-		return mRadioMap;
+		return mRadioGuassianMap;
 	}
 
 	public ArrayList<LatLng> loadTrace( String remoteID, String floorLevel, String filename) {
@@ -669,8 +676,8 @@ public class RadioMapCollectionService extends Service implements SensorEventLis
 				String readLine ;
 				Vector<String> result = new Vector<>();
 				while ((readLine = in.readLine()) != null) {
-					double lat = Double.parseDouble(readLine.split(" ")[0]);
-					double lng = Double.parseDouble(readLine.split(" ")[1]);
+					double lat = parseDouble(readLine.split(" ")[0]);
+					double lng = parseDouble(readLine.split(" ")[1]);
 					nodeList.add(new LatLng(lat, lng));
 				}
 				in.close();
@@ -685,9 +692,9 @@ public class RadioMapCollectionService extends Service implements SensorEventLis
 		return nodeList;
 	}
 
-	private HashMap<LatLng, HashMap<String, Integer>> mRadioGuassianMap = new HashMap<>();
+	private HashMap<String, HashMap<LatLng, HashMap<String, Integer>>> mRadioGuassianMap = new HashMap<>();
 
-	public double getLocalizationError(){
+	public HashMap<String, Double> getLocalizationError(){
 		return mLocalizationError;
 	}
 
@@ -798,22 +805,29 @@ public class RadioMapCollectionService extends Service implements SensorEventLis
 
 	}
 
-	public RadioMap loadRadioGaussianMapFromString(Vector<String> mapStrings) {
+	public HashMap<String, HashMap<LatLng, HashMap<String, Integer>>> loadRadioGaussianMapFromString(Vector<String> mapStrings) {
 		try {
-			HashMap<LatLng, Vector<Fingerprint>> locMap = new HashMap<>();
+//			HashMap<LatLng, Vector<Fingerprint>> locMap = new HashMap<>();
 			mRadioGuassianMap = new HashMap<>();
-
+			HashMap<LatLng, HashMap<String, Integer>> mSingleRadioGuassianMap = new HashMap<>();
+			String level = null;
 			for (String line : mapStrings) {
 				HashMap<String, Integer> gpHash = new HashMap<>();
 				String[] tokens = line.split(" ");
-				if(tokens.length == 3){
-					mLocalizationError = Double.parseDouble(tokens[2]);
+				if(line.startsWith("#")){
+					if(mSingleRadioGuassianMap.size()>0){
+						mRadioGuassianMap.put(level,mSingleRadioGuassianMap);
+					}
+					mSingleRadioGuassianMap= new HashMap<>();
+					level = tokens[1];
+					mLocalizationError.put(tokens[1], Double.parseDouble(tokens[4]));
+
 				}else {
-					LatLng loc = new LatLng(Double.parseDouble(tokens[0]), Double.parseDouble(tokens[1]));
+					LatLng loc = new LatLng(parseDouble(tokens[1]), parseDouble(tokens[2]));
 					Vector<Fingerprint> fp = new Vector<>();
-					for (int i = 0; i < (tokens.length - 2) / 2; i++) {
-						String mac = tokens[i * 2 + 2];
-						String[] element = tokens[i * 2 + 3].split(",");
+					for (int i = 0; i < (tokens.length - 3) / 2; i++) {
+						String mac = tokens[i * 2 + 3];
+						String[] element = tokens[i * 2 + 4].split(",");
 						if(element.length==4){
 							int rssi = Integer.parseInt(element[0]);
 							fp.add(new Fingerprint(mac, rssi, 0));
@@ -822,17 +836,21 @@ public class RadioMapCollectionService extends Service implements SensorEventLis
 
 					}
 
-					locMap.put(loc, fp);
-					mRadioGuassianMap.put(loc, gpHash);
+//					locMap.put(loc, fp);
+					mSingleRadioGuassianMap.put(loc, gpHash);
 				}
 
 			}
-			mRadioMap.mLocFingerPrints = locMap;
+			if(mSingleRadioGuassianMap.size()>0){
+				mRadioGuassianMap.put(level,mSingleRadioGuassianMap);
+			}
+
+//			mRadioMap.mLocFingerPrints = locMap;
 		} catch (Exception e) {
 			e.printStackTrace();
 			return null;
 		}
-		return mRadioMap;
+		return mRadioGuassianMap;
 	}
 
 //	public RadioMap loadRadioMapFromString(Vector<String> mapStrings) {
